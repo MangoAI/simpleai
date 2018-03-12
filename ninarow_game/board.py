@@ -1,5 +1,5 @@
 import numpy as np
-from .ninarow import NInARow
+from .ninarow import WHITE, ONGOING, getOtherPlayer, DRAW
 
 class Move:
 
@@ -18,11 +18,11 @@ class Board:
         self.board_dim = board_dim
         self.n = n
         self.board = np.zeros((board_dim, board_dim))
-        self.current_player = NInARow.WHITE
+        self.current_player = WHITE
         self.history = [] # list of moves
 
     def getLegalMoves(self):
-        if self.getResult() is NInARow.ONGOING:
+        if self.getResult() is ONGOING:
             inds = np.where(self.board == 0)
             return [Move(self.current_player, inds[0][i], inds[1][i]) for i in range(len(inds[0]))]
         else:
@@ -35,7 +35,7 @@ class Board:
         assert self.board[x][y] == 0
         self.history.append(move)
         self.board[x][y] = move.player
-        self.current_player = NInARow.getOtherPlayer(move.player)
+        self.current_player = getOtherPlayer(move.player)
 
     def getPiece(self, x, y):
         return self.board[x][y]
@@ -47,7 +47,7 @@ class Board:
         :return:
         """
         if len(self.history) < 2*self.n - 1:
-            return NInARow.ONGOING
+            return ONGOING
 
         lastMove = self.history[-1]
         lastPiece, lastCoord = lastMove.player, lastMove.getCoords()
@@ -69,8 +69,8 @@ class Board:
                     else:
                         break
         if len(self.history) == self.board_dim * self.board_dim:
-            return NInARow.DRAW
-        return NInARow.ONGOING
+            return DRAW
+        return ONGOING
 
     def undo(self, m):
         if len(self.history) < m:
