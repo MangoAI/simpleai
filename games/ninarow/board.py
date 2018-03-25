@@ -11,6 +11,9 @@ class Move:
     def getCoords(self):
         return np.array((self.x, self.y))
 
+    def __repr__(self):
+        return str((self.x, self.y))
+
 
 class Board:
 
@@ -26,7 +29,6 @@ class Board:
             inds = np.where(self.board == 0)
             return [Move(self.current_player, inds[0][i], inds[1][i]) for i in range(len(inds[0]))]
         else:
-            print("GAME OVER")
             return []
 
     def play(self, move):

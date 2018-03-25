@@ -10,6 +10,14 @@ class GameInterface(ABC):
         pass
 
     @abstractmethod
+    def getPrevTurn(self):
+        pass
+
+    @abstractmethod
+    def getNextTurn(self):
+        pass
+
+    @abstractmethod
     def getLegalMoves(self):
         pass
 
@@ -21,6 +29,14 @@ class GameInterface(ABC):
     def getResult(self):
         """
         Returns winning player, DRAW, or ONGOING
+        :return:
+        """
+        pass
+
+    @abstractmethod
+    def getHistory(self):
+        """
+        Return a tuple of Moves taken in game
         :return:
         """
         pass
