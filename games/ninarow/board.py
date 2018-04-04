@@ -75,6 +75,11 @@ class Board:
         return ONGOING
 
     def undo(self, m):
+        """
+        Undoes the last m moves.
+        :param m:
+        :return:
+        """
         if len(self.history) < m:
             return Board(self.board_dim, self.n)
         toUndo = self.history[-m:]

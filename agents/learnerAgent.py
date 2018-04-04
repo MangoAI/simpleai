@@ -1,13 +1,14 @@
-from .agent import Agent
+from agent import Agent
 import numpy as np
 import sys
 sys.path.insert(0, '..')
 from games import gameInterface, NInARow
 import os
 import datetime
-from .randomAgent import RandomAgent
+from randomAgent import RandomAgent
 import json
 import math
+from models.model import NIARSingleLayer, NInARowData, NIARFeedForward
 
 class State:
 
@@ -33,10 +34,11 @@ class MCTSTree:
             return node
         child = node.getChildren()[np.argmax(node.getUCTs(self.curiosity))]
         deepestNode = self.select(child)
-        turn = node.board.getTurn()
-        node.values[turn] = (node.visits * node.getValue(turn) + deepestNode.getValue(turn)) / (node.visits + 1)
+        for turn in board.getTurnOrder():
+            node.values[turn] = (node.visits * node.getValue(turn) + deepestNode.getValue(turn)) / (node.visits + 1)
+
         node.visits += 1
-        return node
+        return deepestNode
 
     def getBestAction(self):
         return max(self.root.getChildren(), key=lambda c: c.getValue(self.turn)).board.getHistory()[-1]
@@ -63,18 +65,18 @@ class Node:
         if player not in self.values:
             result = self.board.getResult()
             if result is gameInterface.ONGOING:
-                value, policy = self.tree.model(self.board, player)
+                value, policy = self.tree.model.getValueAndPolicy(self.board, player)
                 self.values[player] = value
             else:
                 if result == gameInterface.DRAW:
                     self.values = {turn: 0 for turn in self.board.turns}
                 else:
-                    self.values = {turn: 1 if turn == player else -1 for turn in self.board.turns}
+                    self.values = {turn: 1 if turn == result else -1 for turn in self.board.getTurnOrder()}
         return self.values[player]
 
     def getPolicy(self):
         if self.policy is None:
-            self.policy = self.tree.model(self.board, self.board.getTurn())
+            self.policy = self.tree.model.getValueAndPolicy(self.board, self.board.getTurn())
         return self.policy[1]
 
     def getChildren(self):
@@ -102,24 +104,43 @@ class LearnerAgent(Agent):
             self.tree.select(self.tree.root)
         return self.tree.getBestAction()
 
-def randomModel(board, player):
-    n = len(board.getLegalMoves())
-    # return 0, np.ones(n)/n
-    return np.random.rand()/10000, np.ones(n)/n
-
 class NInARowTrainer:
 
     def __init__(self, directory, board_dim, n, curiosity, max_depth, model):
         self.startTime = datetime.datetime.now()
-        self.directory = os.path.join(directory, self.startTime.strftime("%Y%m%d%H%M%S"))
+        self.directory = directory
         self.board_dim = board_dim
         self.n = n
         self.curiosity = curiosity
         self.max_depth = max_depth
         self.model = model
 
-        agentData = {
-            'startTime': self.startTime.strftime("%Y-%m-%d %H:%M:%S"),
+        self.makeDirectories()
+
+    def makeDirectories(self):
+        if not os.path.isdir(self.directory):
+            os.makedirs(self.directory)
+        if not os.path.isdir(self.getTrainingDataDirectory()):
+            os.makedirs(self.getTrainingDataDirectory())
+        if not os.path.isdir(self.getModelDirectory()):
+            os.makedirs(self.getModelDirectory())
+
+    def getTrainingDataDirectory(self):
+        return os.path.join(self.directory, 'training_data')
+
+    def getModelDirectory(self):
+        return os.path.join(self.directory, 'models')
+
+    def train(self, rounds, iterations):
+        for i in range(rounds):
+            print("Starting round {0}".format(i))
+            data = self.trainRound(iterations)
+            self.trainModel(data)
+
+    def prepareData(self):
+        return {
+            'directory': self.directory,
+            'startTime': datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
             'gameParameters': {
                 'board_dim': self.board_dim,
                 'n': self.n
@@ -133,23 +154,20 @@ class NInARowTrainer:
         }
 
     def trainRound(self, iterations):
-        now = datetime.datetime.now()
-        filename = now.strftime(os.path.join(self.directory, "trainingData", "%Y%m%d%H%M%S"))
-        data = {
-            'startTime': now.strftime("%Y-%m-%d %H:%M:%S"),
-            'games': []
-        }
+        data = self.prepareData()
+        filename = os.path.join(self.getTrainingDataDirectory(), "data_" + data['startTime'] + ".json")
 
         for i in range(iterations):
             gameData = {}
             gameData['startTime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             gameData['turns'] = []
-            agents = [LearnerAgent(randomModel, np.sqrt(2), 50), RandomAgent()]
-            board = NInARow(3, 3)
+            agents = [LearnerAgent(self.model, self.curiosity, self.max_depth),
+                      LearnerAgent(self.model, self.curiosity, self.max_depth)]
+            board = NInARow(self.board_dim, self.n)
             currentPlayer = 0
             while board.getResult() == gameInterface.ONGOING:
                 player = board.getTurn()
-                skip = currentPlayer != 0
+                skip = False
                 move = agents[currentPlayer].getMove(board)
                 gameData['turns'].append({'player': player, 'skip': skip, 'action': (int(move.x), int(move.y))})
                 board.play(move)
@@ -161,79 +179,64 @@ class NInARowTrainer:
                 gameData['result'] = (-1, 1)
             else:
                 gameData['result'] = (0, 0)
+            gameData['endTime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             data['games'].append(gameData)
-            print(i, gameData['result'])
 
-        with open(os.path.join(self.directory, 'blah.json'), 'w') as f:
+        with open(filename, 'w') as f:
             json.dump(data, f)
 
+        return data
 
-class AgentTrainer:
+    def trainModel(self, trainData):
+        data = NInARowData(trainData)
+        self.model.train(data)
+        filename = os.path.join(self.getModelDirectory(), "model_" + trainData['startTime'] + ".h5")
+        self.model.save(filename)
 
-    def __init__(self, directory, agentParameters, model, gameClass, gameParameters):
-        # self.directory =
-        self.model = model
-        self.gameClass = gameClass
-        self.gameParameters = gameParameters
+class RandomModel:
+    def getValueAndPolicy(self, board, player):
+        n = len(board.getLegalMoves())
+        return np.random.rand() / 10000, np.ones(n) / n
 
-        # os.makedirs(self.directory)
+def getBestAction(tree, iterations):
+    for i in range(iterations):
+        tree.select(tree.root)
+    return tree.getBestAction()
 
-    def trainRound(self):
-        data = {
-            'startTime': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'gameParameters': {
-                'board_dim': 3,
-                'n': 3
-            },
-            'agentParameters': {
-                'curiosity': math.sqrt(2),
-                'maxDepth': 50
-            },
-            'turnOrder': NInARow.turns,
-            'games': []
-        }
+if __name__ == '__main__':
+    # board = NInARow(3, 3)
+    # board.play((1, 2))
+    # board.play((1, 0))
+    # model = RandomModel()
+    # curiosity = np.sqrt(2)
+    # tree = MCTSTree(board, model, curiosity)
+    # action = getBestAction(tree, 500)
+    # print(action)
+    # print(tree.root.values)
+    # print(tree.root.getChildren()[0].values)
 
+    board = NInARow(3, 3)
+    model = NIARFeedForward(3, 3, [256])
+    model.initialize()
+    trainer = NInARowTrainer("../data/ninarow/tictactoe", 3, 3, np.sqrt(2), 500, model)
+    trainer.train(100, 1)
 
-    def train(self):
-        data = {
-            'game'              : 'n_in_a_row',
-            'startTime'         : datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'gameParameters'    : {
-                                    'board_dim' : 3,
-                                    'n'         : 3
-                                  },
-            'agentParameters'   : {
-                                    'curiosity': math.sqrt(2),
-                                    'maxDepth': 50
-                                  },
-            'turnOrder'         : NInARow.turns,
-            'games'             : []
-        }
+    # model = NIARFeedForward(3, 3, [256])
+    # model.load('/Users/a.nam/Desktop/mangoai/simpleai/data/ninarow/tictactoe/models/model_20180402125152.h5')
+    # board = NInARow(3, 3)
+    # value, policy = model.getValueAndPolicy(board, NInARow.WHITE)
+    # print(value)
+    # print(policy)
+    # print(board.getLegalMoves())
+    #
+    # board.play((0, 2))
+    # value, policy = model.getValueAndPolicy(board, NInARow.BLACK)
+    # print(value)
+    # print(policy)
+    # print(board.getLegalMoves())
 
-
-        for i in range(100):
-            gameData = {}
-            gameData['startTime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            gameData['turns'] = []
-            agents = [LearnerAgent(randomModel, np.sqrt(2), 50), RandomAgent()]
-            board = NInARow(3, 3)
-            currentPlayer = 0
-            while board.getResult() == gameInterface.ONGOING:
-                player = board.getTurn()
-                skip = currentPlayer != 0
-                move = agents[currentPlayer].getMove(board)
-                gameData['turns'].append({'player': player, 'skip': skip, 'action': (int(move.x), int(move.y))})
-                board.play(move)
-                currentPlayer = (currentPlayer + 1) % len(agents)
-            result = board.getResult()
-            if result == NInARow.turns[0]:
-                gameData['result'] = (1, -1)
-            elif result == NInARow.turns[1]:
-                gameData['result'] = (-1, 1)
-            else:
-                gameData['result'] = (0, 0)
-            data['games'].append(gameData)
-            print(i, gameData['result'])
-
-        with open(os.path.join(self.directory, 'blah.json'), 'w') as f:
-            json.dump(data, f)
+    # trainer.trainRound(2)
+    # data = NInARowData('../data/ninarow/tictactoe/training_data/data_20180328224558.json')
+    # inputs, outputs = data.vectorizeData()
+    # model.train(inputs, outputs)
+    # model.save('../data/ninarow/tictactoe/models/model_20180328224558.h5')

@@ -10,11 +10,7 @@ class GameInterface(ABC):
         pass
 
     @abstractmethod
-    def getPrevTurn(self):
-        pass
-
-    @abstractmethod
-    def getNextTurn(self):
+    def getTurnOrder(self):
         pass
 
     @abstractmethod
@@ -55,4 +51,8 @@ class GameInterface(ABC):
 
     @abstractmethod
     def __hash__(self):
+        pass
+
+    @abstractmethod
+    def __eq__(self, other):
         pass

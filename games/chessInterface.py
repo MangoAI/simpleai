@@ -12,11 +12,8 @@ class Chess(GameInterface):
     def getTurn(self):
         return self.board.turn
 
-    def getPrevTurn(self):
-        return chess.WHITE if self.getTurn() is chess.BLACK else chess.WHITE
-
-    def getNextTurn(self):
-        return chess.WHITE if self.getTurn() is chess.BLACK else chess.WHITE
+    def getTurnOrder(self):
+        return self.turns
 
     def getLegalMoves(self):
         return self.board.legal_moves
@@ -49,6 +46,9 @@ class Chess(GameInterface):
 
     def __hash__(self):
         return (self.getTurn(), repr(self.board)).__hash__()
+
+    def __eq__(self, other):
+        return self.__hash__() == other.__hash__()
 
     def getNumPiece(self, piece, player):
         return len(list(self.board.pieces(piece, player)))
