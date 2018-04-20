@@ -1,0 +1,1 @@
+Model 0Total number of boards evaluated: 5478Average value distance: 0.7331Correct actions: 2818 out of 4520 (0.6235%)Average confidence distance: 0.3119

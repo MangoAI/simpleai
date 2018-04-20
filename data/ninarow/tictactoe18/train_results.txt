@@ -1,0 +1,24 @@
+Model 1
+Total number of boards evaluated: 5478
+Average value distance: 1.0613
+Correct actions: 2694 out of 4520 (0.596%)
+Average confidence distance: 0.2202
+
+Model 2
+Total number of boards evaluated: 5478
+Average value distance: 0.768
+Correct actions: 2856 out of 4520 (0.6319%)
+Average confidence distance: 0.2278
+
+Model 3
+Total number of boards evaluated: 5478
+Average value distance: 0.7886
+Correct actions: 2717 out of 4520 (0.6011%)
+Average confidence distance: 0.2145
+
+Model 4
+Total number of boards evaluated: 5478
+Average value distance: 0.7913
+Correct actions: 2402 out of 4520 (0.5314%)
+Average confidence distance: 0.1868
+

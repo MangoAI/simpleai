@@ -38,6 +38,7 @@ class Board:
         self.history.append(move)
         self.board[x][y] = move.player
         self.current_player = getOtherPlayer(move.player)
+        return self
 
     def getPiece(self, x, y):
         return self.board[x][y]

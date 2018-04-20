@@ -8,6 +8,7 @@ class NInARow(GameInterface):
 
     WHITE = nWHITE
     BLACK = nBLACK
+    DRAW = DRAW
     turns = (WHITE, BLACK)
 
 
@@ -32,7 +33,8 @@ class NInARow(GameInterface):
         """
         if type(move) != Move:
             move = Move(self.getTurn(), move[0], move[1])
-        return self.board.play(move)
+        self.board.play(move)
+        return self
 
     def getResult(self):
         result = self.board.getResult()

@@ -1,7 +1,10 @@
-from agents import RandomAgent, MinMaxAgent, LearnerAgent, AgentTrainer
-from games import Chess, ONGOING, NInARow
-from games.ninarow.board import Move
+from agents import RandomAgent, LearnerAgent, NInARowTrainer
+from games import ONGOING, NInARow
+from agents.models import TicTacToeModel, RandomModel
+from agents.models.model import testTicTacToeModel, NIARKerasFeedForwardModel
+from data.ninarowData import NInARowData
 import numpy as np
+import os
 
 class Game:
 
@@ -14,37 +17,59 @@ class Game:
         while self.board.getResult() == ONGOING:
             self.board.play(self.agents[currentPlayer].getMove(self.board))
             currentPlayer = (currentPlayer + 1)%len(self.agents)
-            # print(self.board)
         return self.board.getResult()
 
-def manyGames():
-    wins = 0
-    for i in range(1, 101):
-        game = Game(NInARow(3, 3), MinMaxAgent(NInARow.turns, lambda a, b: 0, 5, 100), RandomAgent())
-        game.board.play(Move(1, 0, 2))
-        game.board.play(Move(-1, 1, 0))
-        result = game.play()
-        if result == NInARow.turns[0]:
-            wins += 1
-        print(i, wins / i)
+def testLastModel(trainer):
+    modelFilename = trainer.data['modelFiles'][-1]
+    model = NIARKerasFeedForwardModel(3, 3, [256, 256])
+    model.load(modelFilename)
+    testResults = testTicTacToeModel(model)
+    totalBoards = testResults['totalBoards']
+    avgValueDistance = testResults['avgValueDistance']
+    correctActionPercentage = testResults['correctActionPercentage']
+    avgConfidenceDistance = testResults['avgConfidenceDistance']
+    correctActions = testResults['correctActions']
+    actionsTaken = testResults['actionsTaken']
 
-def randomModel(board, player):
-    n = len(board.getLegalMoves())
-    # return 0, np.ones(n)/n
-    return np.random.rand()/10000, np.ones(n)/n
+    with open(os.path.join(trainer.directory, 'train_results.txt'), "a") as f:
+        f.write("Model {0}\n".format(len(trainer.data['modelFiles'])))
+        f.write("Total number of boards evaluated: {0}\n".format(totalBoards))
+        f.write("Average value distance: {0}\n".format(np.round(avgValueDistance, 4)))
+        f.write("Correct actions: {0} out of {1} ({2}%)\n".format(
+            correctActions, actionsTaken,
+            np.round(correctActionPercentage, 4)))
+        f.write("Average confidence distance: {0}\n".format(np.round(avgConfidenceDistance, 4)))
+        f.write("\n")
 
 if __name__ == '__main__':
-    AgentTrainer('agents/data', randomModel).train()
-    # wins = 0
-    # for i in range(1, 1000):
-    #     learner1 = LearnerAgent(randomModel, np.sqrt(2), 50)
-    #     learner2 = LearnerAgent(randomModel, np.sqrt(2), 50)
-    #     random = RandomAgent()
-    #     game = Game(NInARow(3,3), learner1, random)
-    #     # game = Game(NInARow(3,3), learner1, learner2)
-    #     # game = Game(NInARow(3,3), random, learner2)
-    #     # game = Game(NInARow(3, 3), random, random)
-    #     result = game.play()
-    #     if result == NInARow.turns[0]:
-    #         wins += 1
-    #     print(i, wins / i)
+    data = NInARowData("/Users/a.nam/Desktop/mangoai/simpleai/data/ninarow/tictactoe16/training_data.pickle")
+    wins, draws, losses = 0, 0, 0
+    for game in data.games:
+        result = game.getWinner()
+        if result == 0:
+            draws += 1
+        elif result == 1:
+            wins += 1
+        elif result == 2:
+            losses += 1
+    total = wins + losses + draws
+    print("{0} wins out of {1}: {2}%".format( wins, total, np.round(wins / total, 4)*100) )
+    print("{0} losses out of {1}: {2}%".format( losses, total, np.round(losses / total, 4) * 100))
+    print("{0} draws out of {1}: {2}%".format( draws, total, np.round(draws / total, 4) * 100))
+
+
+    # board = NInARow(3, 3)
+    # model = NIARKerasFeedForwardModel(3, 3, [256, 256])
+    # model.initialize()
+    #
+    # trainer = NInARowTrainer("data/ninarow/tictactoe19", model, 3, 3,
+    #                          curiosity=np.sqrt(2),
+    #                          max_depth=25,
+    #                          trainEpochs=1000,
+    #                          stochasticExploration=True, stochasticDecision=False)
+    #
+    # testLastModel(trainer)
+    # for i in range(3):
+    #     print("Training iteration {0}".format(i + 1))
+    #     trainer.train(1, 1000)
+    #     testLastModel(trainer)

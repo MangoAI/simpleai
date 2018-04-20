@@ -1,14 +1,21 @@
-from agent import Agent
+from .agent import Agent
+from .models.model import NInARowData, TicTacToeModel, NIARKerasFeedForwardModel, testTicTacToeModel
 import numpy as np
 import sys
 sys.path.insert(0, '..')
 from games import gameInterface, NInARow
 import os
 import datetime
-from randomAgent import RandomAgent
 import json
-import math
-from models.model import NIARSingleLayer, NInARowData, NIARFeedForward
+import pickle
+
+def weightedSample(arr, p):
+    p -= np.min(p)
+    if np.sum(p) > 0:
+        p = p/np.sum(p)
+    else:
+        p = np.ones(len(p))/len(p)
+    return np.random.choice(arr, p=p)
 
 class State:
 
@@ -17,7 +24,7 @@ class State:
 
 class MCTSTree:
 
-    def __init__(self, rootBoard, model, curiosity):
+    def __init__(self, rootBoard, model, curiosity, stochasticExploration, stochasticDecision):
         """
         :param model: function that takes a State and player (turn) and returns a tuple (value, policyDistribution)
         """
@@ -25,6 +32,8 @@ class MCTSTree:
         self.turn = rootBoard.getTurn()
         self.model = model
         self.curiosity = curiosity
+        self.stochasticExploration = stochasticExploration
+        self.stochasticDecision = stochasticDecision
         self.boardToNode = {self.root.boardHash: self.root}
         self.root.getChildren() # initializes children
 
@@ -32,16 +41,23 @@ class MCTSTree:
         if node.visits == 0 or not node.getChildren(): # Has never been visited before or leaf
             node.visits += 1
             return node
-        child = node.getChildren()[np.argmax(node.getUCTs(self.curiosity))]
+        if self.stochasticExploration:
+            child = weightedSample(node.getChildren(), node.getUCTs(self.curiosity))
+        else:
+            child = node.getChildren()[np.argmax(node.getUCTs(self.curiosity))]
         deepestNode = self.select(child)
-        for turn in board.getTurnOrder():
+        for turn in node.board.getTurnOrder():
             node.values[turn] = (node.visits * node.getValue(turn) + deepestNode.getValue(turn)) / (node.visits + 1)
 
         node.visits += 1
         return deepestNode
 
     def getBestAction(self):
-        return max(self.root.getChildren(), key=lambda c: c.getValue(self.turn)).board.getHistory()[-1]
+        if self.stochasticDecision:
+            nextNode = weightedSample(self.root.getChildren(), [c.getValue(self.turn) for c in self.root.getChildren()])
+        else:
+            nextNode = max(self.root.getChildren(), key=lambda c: c.getValue(self.turn))
+        return nextNode.board.getHistory()[-1]
 
 class Node:
 
@@ -58,6 +74,10 @@ class Node:
     def getUCTs(self, curiosity):
         turn = self.board.getTurn()
         values = np.array([child.getValue(turn) for child in self.getChildren()])
+        # Renormalize values between 0 and 1
+        values -= np.min(values)
+        if (np.sum(values) > 0):
+            values /= np.sum(values)
         visits = np.array([child.visits for child in self.getChildren()])
         return values + curiosity * self.getPolicy() * np.sqrt(np.sum(visits)) / (1 + visits)
 
@@ -92,30 +112,44 @@ class Node:
 
 class LearnerAgent(Agent):
 
-    def __init__(self, model, curiosity, maxNodes):
+    def __init__(self, model, curiosity, maxNodes, stochasticExploration, stochasticDecision):
         self.model = model
         self.curiosity = curiosity
         self.maxNodes = maxNodes
+        self.stochasticExploration = stochasticExploration
+        self.stochasticDecision = stochasticDecision
         self.tree = None
 
     def getMove(self, board):
-        self.tree = MCTSTree(board, self.model, self.curiosity)
+        self.tree = MCTSTree(board, self.model, self.curiosity, self.stochasticExploration, self.stochasticDecision)
         for i in range(self.maxNodes):
             self.tree.select(self.tree.root)
         return self.tree.getBestAction()
 
 class NInARowTrainer:
 
-    def __init__(self, directory, board_dim, n, curiosity, max_depth, model):
+    def __init__(self, directory, model,
+                 board_dim, n,
+                 curiosity, max_depth,
+                 stochasticExploration, stochasticDecision,
+                 trainEpochs=100):
         self.startTime = datetime.datetime.now()
-        self.directory = directory
+        self.directory = os.path.abspath(directory)
         self.board_dim = board_dim
         self.n = n
         self.curiosity = curiosity
         self.max_depth = max_depth
         self.model = model
+        self.stochasticExploration = stochasticExploration
+        self.stochasticDecision = stochasticDecision
+        self.trainEpochs = trainEpochs
 
+        # Don't want to write over
+        assert not os.path.isdir(self.directory)
         self.makeDirectories()
+        filename = os.path.join(self.getModelDirectory(), "model_start" + ".h5")
+        self.model.save(filename)
+        self.data = self.loadData()
 
     def makeDirectories(self):
         if not os.path.isdir(self.directory):
@@ -131,38 +165,51 @@ class NInARowTrainer:
     def getModelDirectory(self):
         return os.path.join(self.directory, 'models')
 
-    def train(self, rounds, iterations):
-        for i in range(rounds):
-            print("Starting round {0}".format(i))
-            data = self.trainRound(iterations)
-            self.trainModel(data)
+    def saveData(self):
+        filename = os.path.join(self.directory, 'training_data.pickle')
+        with open(filename, 'wb') as f:
+            pickle.dump(self.data, f)
 
-    def prepareData(self):
+    def loadData(self):
+        filename = os.path.join(self.directory, 'training_data.pickle')
+        if os.path.isfile(filename):
+            with open(filename, 'rb') as f:
+                return pickle.load(f)
         return {
             'directory': self.directory,
-            'startTime': datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
+            'startTime': datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S"),
             'gameParameters': {
                 'board_dim': self.board_dim,
                 'n': self.n
             },
             'agentParameters': {
                 'curiosity': self.curiosity,
-                'max_depth': self.max_depth
+                'max_depth': self.max_depth,
+                'stochasticExploration': self.stochasticExploration,
+                'stochasticDecision': self.stochasticDecision,
+                'trainEpochs': self.trainEpochs
             },
             'turnOrder': NInARow.turns,
+            'modelFiles': [os.path.join(self.getModelDirectory(), "model_start" + ".h5")],
             'games': []
         }
 
+    def train(self, rounds, iterations):
+        for i in range(rounds):
+            print("Starting round {0}".format(i))
+            self.trainRound(iterations)
+            self.trainModel(rounds*iterations)
+
     def trainRound(self, iterations):
-        data = self.prepareData()
-        filename = os.path.join(self.getTrainingDataDirectory(), "data_" + data['startTime'] + ".json")
+        data = self.data
 
         for i in range(iterations):
             gameData = {}
-            gameData['startTime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            gameData['startTime'] = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+            gameData['modelFile'] = self.data['modelFiles'][-1]
             gameData['turns'] = []
-            agents = [LearnerAgent(self.model, self.curiosity, self.max_depth),
-                      LearnerAgent(self.model, self.curiosity, self.max_depth)]
+            agents = [LearnerAgent(self.model, self.curiosity, self.max_depth, self.stochasticExploration, self.stochasticDecision),
+                      LearnerAgent(self.model, self.curiosity, self.max_depth, self.stochasticExploration, self.stochasticDecision)]
             board = NInARow(self.board_dim, self.n)
             currentPlayer = 0
             while board.getResult() == gameInterface.ONGOING:
@@ -172,31 +219,29 @@ class NInARowTrainer:
                 gameData['turns'].append({'player': player, 'skip': skip, 'action': (int(move.x), int(move.y))})
                 board.play(move)
                 currentPlayer = (currentPlayer + 1) % len(agents)
+            gameData['turns'].append({'player': board.getTurn(), 'skip': False, 'action': None})
             result = board.getResult()
             if result == NInARow.turns[0]:
-                gameData['result'] = (1, -1)
+                gameData['result'] = (0, 1, 0)
             elif result == NInARow.turns[1]:
-                gameData['result'] = (-1, 1)
+                gameData['result'] = (0, 0, 1)
             else:
-                gameData['result'] = (0, 0)
-            gameData['endTime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                gameData['result'] = (1, 0, 0)
+            gameData['endTime'] = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
             data['games'].append(gameData)
 
-        with open(filename, 'w') as f:
-            json.dump(data, f)
-
+        self.saveData()
         return data
 
-    def trainModel(self, trainData):
-        data = NInARowData(trainData)
-        self.model.train(data)
-        filename = os.path.join(self.getModelDirectory(), "model_" + trainData['startTime'] + ".h5")
+    def trainModel(self, lastNGames):
+        data = NInARowData(self.data)
+        inputs, value_outputs, policy_outputs = data.vectorizeData(np.arange(len(self.data['games'])-lastNGames, len(self.data['games'])))
+        self.model.train(inputs, value_outputs, policy_outputs, self.trainEpochs)
+        now = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        filename = os.path.join(self.getModelDirectory(), "model_" + now + ".h5")
+        self.data['modelFiles'].append(filename)
         self.model.save(filename)
-
-class RandomModel:
-    def getValueAndPolicy(self, board, player):
-        n = len(board.getLegalMoves())
-        return np.random.rand() / 10000, np.ones(n) / n
+        self.saveData()
 
 def getBestAction(tree, iterations):
     for i in range(iterations):
@@ -216,10 +261,21 @@ if __name__ == '__main__':
     # print(tree.root.getChildren()[0].values)
 
     board = NInARow(3, 3)
-    model = NIARFeedForward(3, 3, [256])
+    model = NIARKerasFeedForwardModel([256, 256])
     model.initialize()
-    trainer = NInARowTrainer("../data/ninarow/tictactoe", 3, 3, np.sqrt(2), 500, model)
-    trainer.train(100, 1)
+    trainer = NInARowTrainer("../data/ninarow/tictactoe4", 3, 3, np.sqrt(2), 25, model,
+                             trainEpochs=100,
+                             stochasticExploration=True, stochasticDecision=True)
+    for i in range(3):
+        print("Training iteration {0}".format(i+1))
+        trainer.train(1, 3)
+        testTicTacToeModel(trainer.model)
+
+    # model.load('/Users/a.nam/Desktop/mangoai/simpleai/data/ninarow/tictactoe/models/goldStandard256.h5')
+    # model = NIARFeedForward(3, 3, [256, 256])
+    # model.initialize()
+    # trainer = NInARowTrainer("../data/ninarow/tictactoe", 3, 3, np.sqrt(2), 50, model)
+    # trainer.train(100, 1)
 
     # model = NIARFeedForward(3, 3, [256])
     # model.load('/Users/a.nam/Desktop/mangoai/simpleai/data/ninarow/tictactoe/models/model_20180402125152.h5')
