@@ -49,7 +49,7 @@ if __name__ == '__main__':
 
     model = NIARKerasFeedForwardModel(3, 3, [256, 256])
     model.initialize()
-    trainer = NInARowTrainer("data/ninarow/tictactoe/master21", model, 3, 3,
+    trainer = NInARowTrainer("data/ninarow/tictactoe/master22", model, 3, 3,
                                                       curiosity=np.sqrt(2),
                                                       max_depth=25,
                                                       trainEpochs=1000,
@@ -60,7 +60,7 @@ if __name__ == '__main__':
                   agent1=PerfectTicTacToeAgent(),
                   agent2=None,
                   learnFromAgent1=True,
-                  learnFromAgent2=False)
+                  learnFromAgent2=True)
     #
     # results = compareModels(lambda: NInARow(3, 3), trainer.loadModel(-1), RandomModel(), 100, np.sqrt(2), 25)
 
