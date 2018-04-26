@@ -10,7 +10,7 @@ class NInARow(GameInterface):
     BLACK = nBLACK
     DRAW = DRAW
     turns = (WHITE, BLACK)
-
+    ONGOING = ONGOING
 
 
     def __init__(self, board_dim, n):

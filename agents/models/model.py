@@ -4,10 +4,12 @@ from keras.models import Model, Sequential, load_model
 from keras.layers import Input, Dense
 from keras.optimizers import Adam
 from keras.losses import categorical_crossentropy, mean_squared_error
+import collections
 import json
 import sys
 sys.path.insert(0, '../..')
 from games import NInARow
+from tqdm import tqdm
 
 
 class NInARowGame:
@@ -60,8 +62,7 @@ class NInARowData:
         inputs = []
         value_outputs = []
         policy_ouputs = []
-
-        for game in [self.games[i] for i in indices]:
+        for game in tqdm([self.games[i] for i in indices], desc='Vectorizer'):
             board = NInARow(self.gameParameters.board_dim, self.gameParameters.n)
             for turn in game.turns:
                 if not turn.skip:
@@ -71,7 +72,6 @@ class NInARowData:
                     policy_ouputs.append(self.vectorizeAction(turn.action))
                 if turn.action:
                     board.play(turn.action)
-                    break # Should not go beyond this point anyway
         return np.array(inputs), np.array(value_outputs), np.array(policy_ouputs)
 
     def vectorizeResult(self, result):
@@ -223,6 +223,8 @@ class NInARowModel:
         return self.vectorizeAction(None)
 
     def getValuesAndPolicies(self, boards, players):
+        if not isinstance(players, collections.Iterable) or isinstance(players, str):
+            players = [players]*len(boards)
         assert len(boards) == len(players)
         input = np.array([board.featurize() for board in boards])
         prediction = self.model.predict(input)
@@ -240,6 +242,12 @@ class NInARowModel:
     def getValueAndPolicy(self, board, player):
         values, policies = self.getValuesAndPolicies([board], [player])
         return values[0], policies[0]
+
+    def getBestChildrenValues(self, board, player):
+        moves = board.getLegalMoves()
+        children = [board.copy().play(move) for move in moves]
+        values, policies = self.getValuesAndPolicies(children, player)
+        return {moves[i]: values[i] for i in range(len(moves))}
 
 class NIARKerasFeedForwardModel(NInARowModel):
 
@@ -306,7 +314,6 @@ class TicTacToeModel(NInARowKerasModel):
         if self.model is None:
             self.initialize()
         inputs, value_outputs, policy_outputs = TicTacToeModel.vectorizeScoresWithAllActions()
-
         self.model.fit({'input': inputs},
                        {'value_output': value_outputs, 'policy_output': policy_outputs},
                        batch_size=256, epochs=1000)
@@ -367,6 +374,23 @@ class TicTacToeModel(NInARowKerasModel):
         values, policies = self.getValuesAndPolicies([board], [player])
         return values[0], policies[0]
 
+class PerfectTicTacToe(NInARowModel):
+
+    def __init__(self):
+        super().__init__(3, 3)
+        self.valuesAndActions = NInARow.loadValuesAndActions()
+
+    def getValueAndPolicy(self, board, player):
+        value = self.valuesAndActions[board]['value']
+        value = -value if player == NInARow.BLACK else value
+        actions = self.valuesAndActions[board]['actions']
+        policy = np.mean([self.vectorizeAction(action) for action in actions], axis=0)
+        legalMoves = [move.x * self.board_dim + move.y for move in board.getLegalMoves()]
+        return value, policy[legalMoves]
+
+
+
+
 def getBestAction(board, policy):
     return board.getLegalMoves()[np.argmax(policy)]
 
@@ -421,7 +445,7 @@ if __name__ == '__main__':
     model.load('/Users/a.nam/Desktop/mangoai/simpleai/data/ninarow/tictactoe/models/goldStandard256.h5')
     # model.load('/Users/a.nam/Desktop/mangoai/simpleai/data/ninarow/tictactoe/models/goldStandard256_256.h5')
     testTicTacToeModel(model)
-    # b1 = NInARow(3, 3)
+    # b1 = NInARow(3, 3
     # b2 = b1.copy().play((1, 1))
     # b3 = b2.copy().play((0, 1))
     # b4 = b3.copy().play((0, 0))

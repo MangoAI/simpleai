@@ -1,10 +1,13 @@
 from agents import RandomAgent, LearnerAgent, NInARowTrainer
+from agents.learnerAgent import compareModels
+from agents.perfectTicTacToeAgent import PerfectTicTacToeAgent
 from games import ONGOING, NInARow
-from agents.models import TicTacToeModel, RandomModel
-from agents.models.model import testTicTacToeModel, NIARKerasFeedForwardModel
+from agents.models import TicTacToeModel
+from agents.models.model import testTicTacToeModel, NIARKerasFeedForwardModel, RandomModel, PerfectTicTacToe
 from data.ninarowData import NInARowData
 import numpy as np
 import os
+import pandas as pd
 
 class Game:
 
@@ -42,20 +45,50 @@ def testLastModel(trainer):
         f.write("\n")
 
 if __name__ == '__main__':
-    data = NInARowData("/Users/a.nam/Desktop/mangoai/simpleai/data/ninarow/tictactoe16/training_data.pickle")
-    wins, draws, losses = 0, 0, 0
-    for game in data.games:
-        result = game.getWinner()
-        if result == 0:
-            draws += 1
-        elif result == 1:
-            wins += 1
-        elif result == 2:
-            losses += 1
-    total = wins + losses + draws
-    print("{0} wins out of {1}: {2}%".format( wins, total, np.round(wins / total, 4)*100) )
-    print("{0} losses out of {1}: {2}%".format( losses, total, np.round(losses / total, 4) * 100))
-    print("{0} draws out of {1}: {2}%".format( draws, total, np.round(draws / total, 4) * 100))
+    # hi = TicTacToeModel([256,256]).train()
+
+    model = NIARKerasFeedForwardModel(3, 3, [256, 256])
+    model.initialize()
+    trainer = NInARowTrainer("data/ninarow/tictactoe/master21", model, 3, 3,
+                                                      curiosity=np.sqrt(2),
+                                                      max_depth=25,
+                                                      trainEpochs=1000,
+                                                      stochasticExploration=True, stochasticDecision=False)
+    # trainer.trainModel(4000)
+    trainer.train(100, 1000,
+                  learnFromPastRounds=5,
+                  agent1=PerfectTicTacToeAgent(),
+                  agent2=None,
+                  learnFromAgent1=True,
+                  learnFromAgent2=False)
+    #
+    # results = compareModels(lambda: NInARow(3, 3), trainer.loadModel(-1), RandomModel(), 100, np.sqrt(2), 25)
+
+    # model = NIARKerasFeedForwardModel(3, 3, [256, 256])
+    # trainer = NInARowTrainer("data/ninarow/tictactoe19", model, 3, 3,
+    #                                                   curiosity=np.sqrt(2),
+    #                                                   max_depth=25,
+    #                                                   trainEpochs=1000,
+    #                                                   stochasticExploration=True, stochasticDecision=False)
+    # trainer.train(10, 1000)
+    # pModel = PerfectTicTacToe()
+    # model1 = trainer.loadModel(-1)
+    # model2 = RandomModel()
+    # results = compareModels(lambda: NInARow(3,3), PerfectTicTacToe(), RandomModel(), 100, np.sqrt(2), 25)
+    # data = NInARowData("/Users/a.nam/Desktop/mangoai/simpleai/data/ninarow/tictactoe16/training_data.pickle")
+    # wins, draws, losses = 0, 0, 0
+    # for game in data.games:
+    #     result = game.getWinner()
+    #     if result == 0:
+    #         draws += 1
+    #     elif result == 1:
+    #         wins += 1
+    #     elif result == 2:
+    #         losses += 1
+    # total = wins + losses + draws
+    # print("{0} wins out of {1}: {2}%".format( wins, total, np.round(wins / total, 4)*100) )
+    # print("{0} losses out of {1}: {2}%".format( losses, total, np.round(losses / total, 4) * 100))
+    # print("{0} draws out of {1}: {2}%".format( draws, total, np.round(draws / total, 4) * 100))
 
 
     # board = NInARow(3, 3)
