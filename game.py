@@ -49,20 +49,25 @@ if __name__ == '__main__':
 
     model = NIARKerasFeedForwardModel(3, 3, [256, 256])
     model.initialize()
-    trainer = NInARowTrainer("data/ninarow/tictactoe/master22", model, 3, 3,
+    # check against 8
+    trainer = NInARowTrainer("data/ninarow/tictactoe/compare9", model, 3, 3,
                                                       curiosity=np.sqrt(2),
                                                       max_depth=25,
                                                       trainEpochs=1000,
-                                                      stochasticExploration=True, stochasticDecision=False)
-    # trainer.trainModel(4000)
-    trainer.train(100, 1000,
-                  learnFromPastRounds=5,
+                                                      stochasticExploration=True, stochasticDecision=False,
+                                                        keepBest=True)
+    trainer.train(16, 500,
+                  numComparisonGames=25,
+                  learnFromPastRounds=1000,
                   agent1=PerfectTicTacToeAgent(),
                   agent2=None,
                   learnFromAgent1=True,
                   learnFromAgent2=True)
-    #
-    # results = compareModels(lambda: NInARow(3, 3), trainer.loadModel(-1), RandomModel(), 100, np.sqrt(2), 25)
+
+    print(trainer.data['bestModel'])
+    print([result['model1wins'] for result in trainer.data['comparisonResults'][1:]])
+    print([result['model2wins'] for result in trainer.data['comparisonResults'][1:]])
+    print([result['draws'] for result in trainer.data['comparisonResults'][1:]])
 
     # model = NIARKerasFeedForwardModel(3, 3, [256, 256])
     # trainer = NInARowTrainer("data/ninarow/tictactoe19", model, 3, 3,

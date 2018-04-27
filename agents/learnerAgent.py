@@ -178,6 +178,7 @@ class NInARowTrainer:
                  board_dim, n,
                  curiosity, max_depth,
                  stochasticExploration, stochasticDecision,
+                 keepBest=True,
                  trainEpochs=100):
         self.startTime = datetime.datetime.now()
         self.directory = os.path.abspath(directory)
@@ -188,6 +189,7 @@ class NInARowTrainer:
         self.model = model
         self.stochasticExploration = stochasticExploration
         self.stochasticDecision = stochasticDecision
+        self.keepBest = keepBest
         self.trainEpochs = trainEpochs
 
         # Don't want to write over
@@ -196,8 +198,7 @@ class NInARowTrainer:
             self.makeDirectories()
             self.model.save(self.data['modelFiles'][-1])
         else:
-            self.loadModel(-1)
-
+            self.loadModel(self.data['bestModel'][-1])
 
 
     def makeDirectories(self):
@@ -221,6 +222,7 @@ class NInARowTrainer:
 
     def loadData(self):
         filename = os.path.join(self.directory, 'training_data.pickle')
+        startModel = os.path.join(self.getModelDirectory(), "model_start" + ".h5")
         if os.path.isfile(filename):
             with open(filename, 'rb') as f:
                 return pickle.load(f)
@@ -239,16 +241,19 @@ class NInARowTrainer:
                 'trainEpochs': self.trainEpochs
             },
             'turnOrder': NInARow.turns,
-            'modelFiles': [os.path.join(self.getModelDirectory(), "model_start" + ".h5")],
+            'modelFiles': [startModel],
+            'bestModel': [0],
+            'comparisonResults': [None],
             'games': []
         }
 
     def train(self, rounds, iterations, learnFromPastRounds=1,
+              numComparisonGames=25,
               agent1=None, agent2=None, learnFromAgent1=True, learnFromAgent2=True):
         for i in tqdm(range(rounds), desc='training'):
             print("Starting round {0}".format(i))
             self.trainRound(iterations, agent1, agent2, learnFromAgent1, learnFromAgent2)
-            self.trainModel(learnFromPastRounds*iterations)
+            self.trainModel(learnFromPastRounds*iterations, numGames=numComparisonGames)
 
     def trainRound(self, iterations, agent1=None, agent2=None, learnFromAgent1=True, learnFromAgent2=True):
         data = self.data
@@ -293,15 +298,31 @@ class NInARowTrainer:
         self.saveData()
         return data
 
-    def trainModel(self, lastNGames):
+    def trainModel(self, lastNGames, numGames=25):
         data = NInARowData(self.data)
         inputs, value_outputs, policy_outputs = data.vectorizeData(np.arange(max(0, len(self.data['games'])-lastNGames), len(self.data['games'])))
-        self.model.train(inputs, value_outputs, policy_outputs, self.trainEpochs)
+        newModel = self.model.clone()
+        newModel.train(inputs, value_outputs, policy_outputs, self.trainEpochs)
         now = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
         filename = os.path.join(self.getModelDirectory(), "model_" + now + ".h5")
         self.data['modelFiles'].append(filename)
         self.model.save(filename)
+
+        comparisonResults = compareModels(lambda: NInARow(self.board_dim, self.n), self.model, newModel, numGames, self.curiosity, self.max_depth)
+        if comparisonResults['model1wins'] > comparisonResults['model2wins']:
+            self.data['bestModel'].append(self.data['bestModel'][-1])
+        else:
+            self.data['bestModel'].append(len(self.data['modelFiles']))
+            self.model = newModel
+        self.data['comparisonResults'].append(comparisonResults)
         self.saveData()
+
+    def getBetterModel(self, model1, model2, numGames, curiosity, maxNodes):
+        results = compareModels(lambda: NInARow(self.board_dim, self.n), model1, model2, numGames, curiosity, maxNodes)
+        if results['model1wins'] >= results['model2wins']:
+            return model1
+        return model2
+
 
     def loadModel(self, index):
         filename = self.data['modelFiles'][index]
@@ -324,7 +345,7 @@ def runGame(board, agent1, agent2):
 def compareModels(gameGenerator, model1, model2, numGames, curiosity, maxNodes):
     model1start = []
     model2start = []
-    for i in tqdm(range(numGames)):
+    for i in range(numGames):
         model1start.append(runGame(gameGenerator(),
                                    LearnerAgent(model1, curiosity, maxNodes, True, False),
                                    LearnerAgent(model2, curiosity, maxNodes, True, False)))
@@ -332,8 +353,6 @@ def compareModels(gameGenerator, model1, model2, numGames, curiosity, maxNodes):
                                    LearnerAgent(model2, curiosity, maxNodes, True, False),
                                    LearnerAgent(model1, curiosity, maxNodes, True, False)))
     game = gameGenerator()
-    # print(model1start)
-    # print(model2start)
     model1wins = len([a for a in model1start if a == game.turns[0]]) + len(
         [a for a in model2start if a == game.turns[1]])
     model2wins = len([a for a in model1start if a == game.turns[1]]) + len(

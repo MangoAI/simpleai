@@ -1,6 +1,6 @@
 from abc import abstractmethod
 import numpy as np
-from keras.models import Model, Sequential, load_model
+from keras.models import Model, Sequential, load_model, clone_model
 from keras.layers import Input, Dense
 from keras.optimizers import Adam
 from keras.losses import categorical_crossentropy, mean_squared_error
@@ -282,6 +282,15 @@ class NIARKerasFeedForwardModel(NInARowModel):
                        {'value_output': value_vectors, 'policy_output': policy_vectors},
                        verbose=False,
                        batch_size=256, epochs=epochs)
+
+    def clone(self):
+        model = NIARKerasFeedForwardModel(self.board_dim, self.n, self.hidden_nodes)
+        model.model = clone_model(self.model)
+        model.model.set_weights(self.model.get_weights())
+        model.model.compile(optimizer=Adam(),
+                      loss={'value_output': categorical_crossentropy,
+                            'policy_output': categorical_crossentropy})
+        return model
 
     def load(self, filename):
         self.model = load_model(filename)
